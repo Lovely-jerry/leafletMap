@@ -17,10 +17,10 @@ export default class MapView extends Component {
   constructor(props) {
     super(props)
     this.state = {
-      //是否显示showDate1
-      isShowBigEl: true,
       //地图对象
-      map: null          
+      map: null,
+      //聚合图层对象
+      clusterObj: null,
 
     }
   }
@@ -30,15 +30,41 @@ export default class MapView extends Component {
   }
 
   componentWillReceiveProps(nextProps) {
-    console.log('nextProps', nextProps);
-    //创建聚合点位
-    this.createClusterMarker(nextProps.address)
+    // console.log('nextProps', nextProps);
+    const { map, clusterObj } = this.state;
+
+    if (JSON.stringify(nextProps.address) !== JSON.stringify(this.props.address)) {
+      if (clusterObj !== null) {
+        clusterObj.clearLayers();
+        this.props.handleSaveValue('')
+      }
+      //创建聚合点位
+      this.createClusterMarker(nextProps.address);
+    };
+
+    if (nextProps.selectTItemValue !== this.props.selectTItemValue) {
+      let Item = nextProps.address.find((item) => item.name === nextProps.selectTItemValue);
+
+      if (!!Item) {
+        // 点击的地点设置为地图中心点位
+        map.setView([Item.lat, Item.lng]);
+        // 打开小弹窗
+        this.createPopupModule([Item.lat, Item.lng], map)
+      } else {
+        // 点击的地点设置为地图中心点位
+        map.setView([nextProps.address[0].lat, nextProps.address[0].lng]);
+        // 打开小弹窗
+        // this.createPopupModule([nextProps.address[0].lat, nextProps.address[0].lng], map)
+      }
+    }
+
+
   }
 
   initMap = () => {
     let host = 'https://iserver.supermap.io';
     let url = host + '/iserver/services/map-china400/rest/maps/China';
-    const { address } = this.props;
+    const { address, handleSaveShowListEl } = this.props;
 
     //初始化地图
     let map = L.map('map', {
@@ -48,10 +74,8 @@ export default class MapView extends Component {
     });
 
     //移动地图收起大的元素
-    map.on('moveend', () => {
-      this.setState({
-        isShowBigEl: false
-      })
+    map.on('dragend', () => {
+      handleSaveShowListEl(false)
     })
 
     //添加图层
@@ -76,7 +100,7 @@ export default class MapView extends Component {
     const { map } = this.state;
 
     console.log('address', address);
-    let { fireIcon, thunderboltIcon } = this.defineIconTypes()
+    let fireIcon = this.defineIconTypes(fire), thunderboltIcon = this.defineIconTypes(thunderbolt);
 
     // 实例化markerCluster
     let cluster = L.markerClusterGroup({
@@ -93,16 +117,15 @@ export default class MapView extends Component {
 
       marker = L.marker(latLng, { icon });
 
-      this.handlerMouseOverIcon(marker, item.showIndex, latLng, map)
+      this.handlerMouseOverIcon(marker, item.showIndex, item.name, latLng, map)
 
-      // item.type === 'viewSpot' ?
-      //   this.handlerMouseOverIcon(marker, index,latLng, map) :
-      //   this.handleOtherModle(marker, latLng, map)
-
-      cluster.addLayer(marker)
+      cluster.addLayer(marker);
+      this.setState({
+        clusterObj: cluster
+      })
     })
 
-    map.addLayer(cluster)
+    map.addLayer(cluster);
 
   }
 
@@ -112,12 +135,15 @@ export default class MapView extends Component {
    * @param {} latLng 经纬度
    * @param {*} map 地图图层
    */
-  handlerMouseOverIcon = (marker, showIndex, latLng, map) => {
+  handlerMouseOverIcon = (marker, showIndex,name, latLng, map) => {
 
-    this.createTooltipEl(showIndex, marker)
+    this.createTooltipEl(showIndex+1, marker)
 
-    marker.on('mouseover', () => {
-      this.createPopupModule(latLng, map)
+    marker.on('click', () => {
+      this.createPopupModule(latLng, map);
+
+      this.props.handleSaveValue(name)
+
     });
 
   }
@@ -132,7 +158,7 @@ export default class MapView extends Component {
     // 设置显示的序号
     let index = showIndex > 9 ? `${showIndex}` : `0${showIndex}`;
     //创建序号元素
-    showIndex !== -1 && marker.bindTooltip(index, {
+    !!showIndex && marker.bindTooltip(index, {
       permanent: true,
       direction: 'top',
       offset: [0, -10]
@@ -145,17 +171,13 @@ export default class MapView extends Component {
    * 定义图标种类，并将其返回
    * @returns Object 图标对象组
    */
-  defineIconTypes() {
-    let fireIcon = L.icon({
-      iconUrl: fire,
-      iconSize: [20, 20]
-    })
-    let thunderboltIcon = L.icon({
-      iconUrl: thunderbolt,
+  defineIconTypes(url) {
+    let Icon = L.icon({
+      iconUrl: url,
       iconSize: [20, 20]
     })
 
-    return { fireIcon, thunderboltIcon }
+    return Icon;
   }
 
   /**
@@ -170,12 +192,16 @@ export default class MapView extends Component {
       closeButton: false
     })
 
+    const { handleSetIsShowDetailsPagesValue } = this.props;
+
     popup.setLatLng(latLng).setContent(Cards).openOn(map);
 
     //获取弹窗元素并为弹窗元素添加点击事件
     let cardBoxEl = popup.getElement();
     cardBoxEl.onclick = function () {
-      alert('您好！欢迎您');
+      handleSetIsShowDetailsPagesValue(true)
+      // alert('您好！欢迎您');
+
     }
   }
 
@@ -185,19 +211,7 @@ export default class MapView extends Component {
     L.marker(latLng, { icon: myIcon }).addTo(map)
     // marker.addLayer()
   }
-  /**
-   * 点击小元素显示大的div元素
-   */
-  handleShowBigEl = () => {
-    this.setState({
-      isShowBigEl: true
-    })
-  }
 
-  handleSetNewDate = (date) => {
-    const { dataProcessing } = this.props;
-    dataProcessing(date);
-  }
 
   render() {
 
@@ -210,20 +224,18 @@ export default class MapView extends Component {
       { "name": "人民大会堂", "lat": "39.903244", "lng": "116.387400", "type": "viewSpot" }
     ]
 
-    const { isShowBigEl } = this.state;
+    const { isShowBigEl, isShowListEl, selectTItemValue } = this.state;
+
+    //list列表需要的数据
+    const listProps = {
+      listDate: isShowListEl ? newDate : [],
+      handleSaveValue: this.handleSaveValue,
+      selectTItemValue
+    }
+
     return (
-      <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div style={{ width: '100%', height: '100%', position: 'absolute' }}>
         <div style={{ width: '100%', height: '100%' }} id="map"></div>
-        <div className='divEl'>
-          <button onClick={()=>{this.handleSetNewDate(newDate)}}>更新数据</button>&nbsp;&nbsp;
-          <button onClick={()=>{this.handleSetNewDate([])}}>重置数据</button>
-        </div>
-        <div className='showDateEl'>
-          {isShowBigEl ?
-            <div style={{ height: '600px' }}>showData</div> :
-            <div style={{ height: '50px' }} onClick={this.handleShowBigEl}>showData---dddd</div>
-          }
-        </div>
       </div>
     )
   }
